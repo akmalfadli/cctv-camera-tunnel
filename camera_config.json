@@ -1,0 +1,25 @@
+{
+  "vps_host": "my.perwirateknologi.com",
+  "vps_user": "perwira",
+  "vps_port": 22,
+  "ssh_key_path": "~/.ssh/id_rsa",
+  "local_http_port": 8080,
+  "vps_http_port": 8081,
+  "cameras": {
+    "depan": {
+      "name": "Kamera Pelayanan",
+      "rtsp_url": "rtsp://admin:pAdli3nb31!@192.168.1.10:554",
+      "description": "Kamera Pelayanan"
+    },
+    "garasi": {
+      "name": "Kamara Depan",
+      "rtsp_url": "rtsp://admin:pAdli3nb31!@192.168.1.17:554",
+      "description": "Kamera Depan Kantor"
+    },
+    "pelayanan": {
+      "name": "Kamera Garasi",
+      "rtsp_url": "rtsp://admin:pAdli3nb31!@192.168.1.74:554",
+      "description": "Kamera Garasi"
+    }
+  }
+}

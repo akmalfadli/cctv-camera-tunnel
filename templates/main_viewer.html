@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CCTV Kantor Desa Timbang</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .camera-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .camera-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .camera-item h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .camera-item p {
+            color: #666;
+            margin: 5px 0 15px 0;
+        }
+        video {
+            width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .camera-links {
+            margin-top: 10px;
+            text-align: center;
+        }
+        .camera-links a {
+            color: #007bff;
+            text-decoration: none;
+            margin: 0 5px;
+        }
+        .camera-links a:hover {
+            text-decoration: underline;
+        }
+        .info {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: #28a745;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="status">● LIVE</div>
+    <div class="header">
+        <h1>Kamera CCTV Kantor Desa</h1>
+        <div class="info">
+            <strong>Server:</strong> Desa Timbang, Kec. Kejobong, Kab. Purbalingga| 
+            <strong>Cameras:</strong> {{.CameraCount}} active
+        </div>
+    </div>
+    
+    <div class="camera-grid">
+        {{range $id, $camera := .Cameras}}
+        <div class="camera-item">
+            <h3>{{$camera.Name}}</h3>
+            <p>{{$camera.Description}}</p>
+            <video controls autoplay muted>
+                <source src="/stream/{{$id}}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            <div class="camera-links">
+                <a href="/camera/{{$id}}" target="_blank">Full Screen</a> | 
+                <a href="/stream/{{$id}}" target="_blank">Direct Stream</a>
+            </div>
+        </div>
+        {{end}}
+    </div>
+    
+    <div style="text-align: center; margin-top: 30px; color: #666;">
+        <p>Click "Full Screen" for individual camera view | "Direct Stream" for raw video feed</p>
+    </div>
+</body>
+</html>
