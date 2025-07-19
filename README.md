@@ -432,3 +432,7 @@ For issues and questions:
 2. Verify configuration settings
 3. Test individual components (SSH, cameras, FFmpeg)
 4. Review application logs for error messages
+
+
+For auto start the service put camera-tunnel.service to this path
+/etc/systemd/system/camera-tunnel.service

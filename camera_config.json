@@ -20,6 +20,11 @@
       "name": "Kamera Garasi",
       "rtsp_url": "rtsp://admin:pAdli3nb31!@192.168.1.74:554",
       "description": "Kamera Garasi"
+    },
+    "absen":{
+      "name":"Kamera Absen",
+      "rtsp_url":"rtsp://admin:IUVHAU@192.168.1.24:554",
+      "description":"Kamera untuk absen"
     }
   }
 }

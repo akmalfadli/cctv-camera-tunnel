@@ -1,0 +1,15 @@
+Description=CCTV Camera Tunnel Auto Start
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStartPre=/bin/sleep 120
+TimeoutStartSec=150
+WorkingDirectory=/home/perwira/camera-tunnel/
+ExecStart=/home/perwira/camera-tunnel/camera-tunnel
+Restart=always
+User=perwira
+Group=perwira
+
+[Install]
+WantedBy=multi-user.target
