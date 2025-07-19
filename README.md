@@ -436,3 +436,12 @@ For issues and questions:
 
 For auto start the service put camera-tunnel.service to this path
 /etc/systemd/system/camera-tunnel.service
+
+[command to check the service status]
+sudo systemctl status camera-tunnel.service
+
+[command to restart the service]
+sudo systemctl restart camera-tunnel.service
+
+[command to check the log]
+journalctl -u camera-tunnel.service -b
