@@ -1,447 +1,142 @@
-# Multi-Camera CCTV Streaming System
+# CCTV Camera Tunnel - Refactored Architecture
 
-A robust Go-based application that creates secure SSH tunnels to stream multiple RTSP cameras through a web interface. The system converts RTSP camera feeds to HTTP streams and makes them accessible via a VPS, providing remote monitoring capabilities.
-
-## Features
-
-- **Multiple Camera Support**: Stream multiple RTSP cameras simultaneously
-- **SSH Tunnel Security**: Secure connection to remote VPS via SSH tunneling
-- **Web Interface**: Clean HTML interface for viewing cameras
-- **Real-time Streaming**: FFmpeg-powered video streaming with optimized settings
-- **Auto-reconnection**: Automatic SSH tunnel reconnection on connection loss
-- **RESTful API**: JSON API for camera management and integration
-- **Template System**: Customizable HTML templates for the web interface
-- **Fallback Authentication**: SSH agent and key file authentication support
+This project has been refactored to a production-ready Go application for managing RTSP to HLS streaming for 1000+ viewers using a CDN-friendly architecture.
 
 ## Architecture
 
-```
-Local Network (Cameras) → Go HTTP Server → SSH Tunnel → VPS → Internet
-```
+1.  **Ingest**: Go application (`cctv-control`) manages FFmpeg processes (one per camera) that ingest RTSP and output HLS segments.
+2.  **Origin**: Nginx (configured via `nginx.conf`) serves the HLS segments from the disk. The Go app's built-in HTTP server is for control API and local testing only.
+3.  **Delivery**: A CDN (Cloudflare, Akamai, etc.) pulls from Nginx and serves segments to end-users.
 
-The system creates a local HTTP server that converts RTSP streams to HTTP, then establishes an SSH tunnel to make these streams accessible through a remote VPS.
+## Project Structure
 
-## Prerequisites
+- `cmd/cctv-control/`: Entry point (main.go).
+- `internal/config/`: Configuration loading.
+- `internal/camera/`: Camera registry.
+- `internal/ffmpeg/`: Process supervisor for FFmpeg.
+- `internal/hls/`: HLS path and cleanup management.
+- `internal/api/`: HTTP API and viewer handlers.
+- `internal/auth/`: JWT authentication.
+- `internal/templates/`: HTML templates for the viewer and admin panel.
+- `web/static/`: Static assets (JS/CSS).
 
-### Required Software
-- **Go 1.19+**: For building and running the application
-- **FFmpeg**: For video stream processing
-- **SSH Access**: To a VPS with SSH key authentication
+## Admin & Management
 
-### Installation Commands
+The system includes a secure, web-based admin panel for managing cameras.
 
-**Ubuntu/Debian:**
+1.  **Access**: Navigate to `http://localhost:8080/login`.
+2.  **Default Credentials**:
+    - Username: `admin`
+    - Password: `admin`
+    - **Important**: Change these in `camera_config.json` immediately.
+3.  **Features**:
+    - **CRUD Operations**: Add, Edit, and Delete cameras directly from the UI.
+    - **Live Control**: Enable or Disable streams instantly. The supervisor handles the background FFmpeg processes.
+    - **Persistence**: All changes are automatically saved to `camera_config.json`.
+
+## Deployment Guide
+
+### 1. Build
+
 ```bash
-sudo apt update
-sudo apt install golang-go ffmpeg
+go build -o cctv-control cmd/cctv-control/main.go
 ```
 
-**macOS:**
-```bash
-brew install go ffmpeg
-```
+### 2. Configuration (`camera_config.json`)
 
-**Windows:**
-- Download Go from https://golang.org/
-- Download FFmpeg from https://ffmpeg.org/
+The `camera_config.json` file controls server settings, authentication, and the camera list. It is automatically updated by the Admin Panel, but you can also edit it manually.
 
-## Installation
-
-1. **Clone or download the project**
-```bash
-git clone <repository-url>
-cd camera-streaming-system
-```
-
-2. **Install Go dependencies**
-```bash
-go mod init camera-streaming
-go get golang.org/x/crypto/ssh
-go get golang.org/x/crypto/ssh/agent
-go get golang.org/x/term
-```
-
-3. **Create templates directory**
-```bash
-mkdir templates
-```
-
-4. **Build the application**
-```bash
-go build -o camera-server main.go
-```
-
-## Configuration
-
-### Initial Setup
-
-1. **Run the application first time to generate config**
-```bash
-./camera-server
-```
-
-2. **Edit the generated `camera_config.json`**
 ```json
 {
-  "vps_host": "your-vps-domain.com",
-  "vps_user": "your-username",
-  "vps_port": 22,
-  "ssh_key_path": "~/.ssh/id_rsa",
-  "ssh_passphrase": "",
-  "local_http_port": 8080,
-  "vps_http_port": 8081,
+  "server_port": 8080,
+  "metrics_port": 0,
+  "hls_output_root": "./hls",
+  "segment_duration": 2,
+  "playlist_size": 5,
   "cameras": {
-    "camera1": {
-      "name": "Front Door Camera",
-      "rtsp_url": "rtsp://admin:password@192.168.1.100:554",
-      "description": "Main entrance monitoring"
-    },
-    "camera2": {
-      "name": "Garage Camera",
-      "rtsp_url": "rtsp://admin:password@192.168.1.101:554",
-      "description": "Garage area monitoring"
+    "cam1": {
+      "name": "Front Door",
+      "rtsp_url": "rtsp://user:pass@192.168.1.10:554/stream",
+      "description": "Main Entrance",
+      "enabled": true
     }
   }
 }
 ```
 
-### Configuration Parameters
+### 3. Nginx Setup (Production Origin)
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `vps_host` | VPS domain or IP address | `"example.com"` |
-| `vps_user` | SSH username for VPS | `"ubuntu"` |
-| `vps_port` | SSH port (usually 22) | `22` |
-| `ssh_key_path` | Path to SSH private key | `"~/.ssh/id_rsa"` |
-| `ssh_passphrase` | SSH key passphrase (optional) | `""` |
-| `local_http_port` | Local HTTP server port | `8080` |
-| `vps_http_port` | Remote port for public access | `8081` |
+For production, do **not** rely on the Go app's built-in file server for high traffic. Install Nginx and use the provided `nginx.conf.example` as a template.
 
-### Camera Configuration
+1.  Install Nginx.
+2.  Copy `nginx.conf.example` logic to your Nginx config.
+3.  Point the `alias` directive to the `hls_output_root` directory defined in your config (default: `./hls`).
+4.  Ensure Nginx has read permissions for that directory.
 
-Each camera requires:
-- **name**: Display name for the camera
-- **rtsp_url**: Complete RTSP URL with credentials
-- **description**: Optional description
+### 4. Run
 
-## HTML Templates
-
-Create these template files in the `templates/` directory:
-
-### `templates/main_viewer.html`
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Camera CCTV Viewer</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f0f0f0;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .camera-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 20px;
-        }
-        .camera-card {
-            background: white;
-            border-radius: 8px;
-            padding: 15px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .camera-title {
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
-        .camera-video {
-            width: 100%;
-            height: 300px;
-            border-radius: 4px;
-            background-color: #000;
-        }
-        .camera-controls {
-            margin-top: 10px;
-            text-align: center;
-        }
-        .btn {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin: 0 5px;
-        }
-        .btn:hover {
-            background-color: #0056b3;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Multi-Camera CCTV System</h1>
-            <p>{{ .CameraCount }} cameras online</p>
-        </div>
-        
-        <div class="camera-grid">
-            {{ range $id, $camera := .Cameras }}
-            <div class="camera-card">
-                <div class="camera-title">{{ $camera.Name }}</div>
-                <video class="camera-video" controls autoplay muted>
-                    <source src="/stream/{{ $id }}" type="video/mp4">
-                    Your browser does not support video streaming.
-                </video>
-                <div class="camera-controls">
-                    <button class="btn" onclick="location.href='/camera/{{ $id }}'">Full Screen</button>
-                    <button class="btn" onclick="reloadStream('{{ $id }}')">Reload</button>
-                </div>
-                <p>{{ $camera.Description }}</p>
-            </div>
-            {{ end }}
-        </div>
-    </div>
-
-    <script>
-        function reloadStream(cameraId) {
-            const video = document.querySelector(`[src="/stream/${cameraId}"]`).parentElement;
-            const src = video.querySelector('source').src;
-            video.load();
-        }
-        
-        // Auto-reload streams every 5 minutes to prevent timeout
-        setInterval(() => {
-            document.querySelectorAll('.camera-video').forEach(video => {
-                video.load();
-            });
-        }, 300000);
-    </script>
-</body>
-</html>
-```
-
-### `templates/single_camera.html`
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ .Camera.Name }} - CCTV Viewer</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #000;
-            color: white;
-        }
-        .container {
-            padding: 20px;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        .camera-video {
-            width: 100%;
-            height: 80vh;
-            border-radius: 4px;
-        }
-        .controls {
-            margin-top: 20px;
-            text-align: center;
-        }
-        .btn {
-            background-color: #007bff;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin: 0 10px;
-            font-size: 16px;
-        }
-        .btn:hover {
-            background-color: #0056b3;
-        }
-        .back-btn {
-            background-color: #6c757d;
-        }
-        .back-btn:hover {
-            background-color: #545b62;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>{{ .Camera.Name }}</h1>
-            <button class="btn back-btn" onclick="history.back()">← Back</button>
-        </div>
-        
-        <video class="camera-video" controls autoplay muted>
-            <source src="/stream/{{ .CameraID }}" type="video/mp4">
-            Your browser does not support video streaming.
-        </video>
-        
-        <div class="controls">
-            <button class="btn" onclick="toggleFullscreen()">Full Screen</button>
-            <button class="btn" onclick="reloadStream()">Reload Stream</button>
-            <button class="btn" onclick="location.href='/'">All Cameras</button>
-        </div>
-        
-        <p style="text-align: center; margin-top: 20px;">{{ .Camera.Description }}</p>
-    </div>
-
-    <script>
-        function reloadStream() {
-            document.querySelector('.camera-video').load();
-        }
-        
-        function toggleFullscreen() {
-            const video = document.querySelector('.camera-video');
-            if (video.requestFullscreen) {
-                video.requestFullscreen();
-            }
-        }
-        
-        // Auto-reload stream every 5 minutes
-        setInterval(() => {
-            document.querySelector('.camera-video').load();
-        }, 300000);
-    </script>
-</body>
-</html>
-```
-
-## Usage
-
-### Starting the System
-
-1. **Run the application**
 ```bash
-./camera-server
+./cctv-control -config camera_config.json
 ```
 
-2. **Monitor the logs**
-The application will show:
-- Camera connectivity tests
-- HTTP server status
-- SSH tunnel establishment
-- Public access URLs
+### 5. Verify
 
-### Accessing Cameras
+- **Viewer**: Visit `http://localhost:8080` to see the public camera dashboard.
+- **Admin**: Visit `http://localhost:8080/admin` to manage cameras.
+- **Streams**: Available at `http://localhost:8080/hls/<camera_id>/stream.m3u8`.
 
-- **Main viewer**: `http://your-vps:8081`
-- **Individual camera**: `http://your-vps:8081/camera/camera1`
-- **API endpoint**: `http://your-vps:8081/api/cameras`
-- **Direct stream**: `http://your-vps:8081/stream/camera1`
+## Performance Notes
 
-### API Endpoints
+- **FFmpeg**: Configured for `zerolatency`, `veryfast` preset, and 2-second segments. This ensures low latency (<5s) and CDN compatibility.
+- **Go**: Acts only as a control plane (Control Plane). It does _not_ stream video bytes, ensuring it uses minimal CPU/RAM.
+- **Scalability**: The `hls` folder contains static files (.m3u8 playlists and .ts segments). Nginx + CDN handles the massive read load, allowing for 1000+ concurrent viewers.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Main multi-camera viewer |
-| `/api/cameras` | GET | JSON list of all cameras |
-| `/camera/{id}` | GET | Single camera full-screen view |
-| `/stream/{id}` | GET | Direct video stream |
+## CDN Integration Guide (Scaling to 1000+ Viewers)
 
-## Troubleshooting
+To scale beyond 10-20 viewers, you **must** use a CDN (Content Delivery Network). This prevents your local internet upload speed from becoming the bottleneck.
 
-### Common Issues
+### Option A: Cloudflare Tunnel (Recommended & Easiest)
 
-**1. FFmpeg not found**
-```bash
-# Ubuntu/Debian
-sudo apt install ffmpeg
+This method exposes your local server directly to Cloudflare without needing a VPS or port forwarding.
 
-# macOS
-brew install ffmpeg
-```
+1.  **Install `cloudflared`** on your local machine.
+2.  **Authenticate**: `cloudflared tunnel login`
+3.  **Create Tunnel**: `cloudflared tunnel create cctv-tunnel`
+4.  **Configure**: Create `config.yml`:
+    ```yaml
+    tunnel: <Tunnel-UUID>
+    credentials-file: /root/.cloudflared/<Tunnel-UUID>.json
+    ingress:
+      - hostname: cctv.yourdomain.com
+        service: http://localhost:8081 # Point to your local Nginx port, NOT the Go app port
+      - service: http_status:404
+    ```
+5.  **Run**: `cloudflared tunnel run cctv-tunnel`
 
-**2. SSH connection failed**
-- Verify SSH key permissions: `chmod 600 ~/.ssh/id_rsa`
-- Test manual SSH connection: `ssh user@your-vps`
-- Check VPS firewall settings
+### Option B: VPS Tunneling (Advanced)
 
-**3. Camera not accessible**
-- Verify camera IP addresses
-- Test RTSP URL with VLC media player
-- Check network connectivity to cameras
+If you prefer using your own VPS as the gateway:
 
-**4. Port already in use**
-- Change `local_http_port` in config
-- Kill existing processes: `sudo lsof -t -i:8080 | xargs kill -9`
+1.  **Tunnel**: Use **FRP (Fast Reverse Proxy)** or **WireGuard** to tunnel traffic from Localhost:8081 -> VPS:80.
+    - _Avoid SSH Remote Forwarding (`ssh -R`) for high-traffic video as it is TCP-over-TCP and inefficient._
+2.  **DNS**: Point `cctv.yourdomain.com` to your VPS IP in Cloudflare DNS.
+3.  **Proxy**: Enable the "Orange Cloud" (Proxied) in Cloudflare.
 
-**5. Template not found**
-- Ensure `templates/` directory exists
-- Verify template files are present
-- Check file permissions
+### Critical: Cloudflare Cache Rules
 
-### Debug Mode
+You must tell the CDN how to cache the files properly, otherwise streams will lag or not play.
 
-Add verbose logging by modifying the logger configuration in the code or check the console output for detailed connection information.
+1.  Go to **Cloudflare Dashboard > Caching > Cache Rules**.
+2.  Create a rule: **"Cache HLS Segments"**
+    - **If URL path ends with**: `.ts`
+    - **Cache Status**: Eligible for Cache
+    - **Edge Cache TTL**: 1 Month (or longer)
+    - **Browser Cache TTL**: 1 Year
+3.  Create a rule: **"Do NOT Cache Manifests"**
+    - **If URL path ends with**: `.m3u8`
+    - **Cache Status**: Bypass Cache (or set extremely low TTL like 2 seconds)
 
-### SSH Tunnel Manual Test
+**Why?**
 
-Test SSH tunnel manually:
-```bash
-ssh -i ~/.ssh/id_rsa -R 0.0.0.0:8081:localhost:8080 -N user@your-vps
-```
-
-## Security Considerations
-
-- Use strong SSH keys and passphrases
-- Regularly update SSH keys
-- Configure VPS firewall to allow only necessary ports
-- Use HTTPS reverse proxy for production deployment
-- Regularly update camera firmware and change default passwords
-
-## Performance Optimization
-
-- **For high-resolution cameras**: Adjust FFmpeg settings in the code
-- **For multiple cameras**: Consider increasing server resources
-- **For remote access**: Use CDN or caching proxy
-- **For mobile devices**: Implement adaptive bitrate streaming
-
-## License
-
-This project is provided as-is for educational and personal use. Please ensure compliance with local laws and regulations regarding surveillance systems.
-
-## Support
-
-For issues and questions:
-1. Check the troubleshooting section
-2. Verify configuration settings
-3. Test individual components (SSH, cameras, FFmpeg)
-4. Review application logs for error messages
-
-
-For auto start the service put camera-tunnel.service to this path
-/etc/systemd/system/camera-tunnel.service
-
-[command to check the service status]
-sudo systemctl status camera-tunnel.service
-
-[command to restart the service]
-sudo systemctl restart camera-tunnel.service
-
-[command to check the log]
-journalctl -u camera-tunnel.service -b
+- `.ts` files are static video chunks. Once created, they never change. We want these served from Cloudflare's edge 99.9% of the time.
+- `.m3u8` files are the "playlist". They update every 2 seconds with new segments. If cached, users will see an old playlist and the video will freeze.

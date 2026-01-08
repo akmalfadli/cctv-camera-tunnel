@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CCTV Dashboard</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f0f2f5; padding: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .card { background: white; border-radius: 8px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .card h3 { margin: 0 0 10px 0; }
+        .btn { display: inline-block; padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; }
+        .btn:hover { background: #0056b3; }
+        .status { font-size: 0.8em; color: #666; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <h1>CCTV Cameras</h1>
+    <div class="grid">
+        {{range $id, $cam := .}}
+        <div class="card">
+            <h3>{{$cam.Name}}</h3>
+            <p>{{$cam.Description}}</p>
+            <div class="status" id="status-{{$id}}">Checking status...</div>
+            <a href="/view/{{$id}}" class="btn">View Stream</a>
+        </div>
+        {{end}}
+    </div>
+
+    <script>
+        // Simple status poller
+        setInterval(() => {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    for (const [id, state] of Object.entries(data)) {
+                        const el = document.getElementById(`status-${id}`);
+                        if (el) el.innerText = `Status: ${state}`;
+                    }
+                });
+        }, 5000);
+    </script>
+</body>
+</html>

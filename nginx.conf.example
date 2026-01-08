@@ -1,0 +1,74 @@
+worker_processes auto;
+
+events {
+    worker_connections 2048;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    
+    # Optimization for file serving
+    sendfile        on;
+    tcp_nopush      on;
+    tcp_nodelay     on;
+    keepalive_timeout  65;
+    types_hash_max_size 2048;
+
+    # Gzip Compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss application/atom+xml image/svg+xml application/vnd.apple.mpegurl;
+
+    # HLS Configuration
+    server {
+        listen 8081;
+        server_name localhost;
+
+        # Root directory where HLS files are generated
+        # MUST MATCH "hls_output_root" in camera_config.json
+        # If your config says "./hls", use the absolute path here
+        root /path/to/your/cctv-camera-tunnel; 
+
+        # Allow CORS for HLS from any origin (Crucial for CDN and cross-domain playback)
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods 'GET, OPTIONS';
+        add_header Access-Control-Allow-Headers 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
+        add_header Access-Control-Expose-Headers 'Content-Length,Content-Range';
+
+        location /hls {
+            # Disable directory listing
+            autoindex off;
+
+            # Handle OPTIONS method for CORS preflight
+            if ($request_method = 'OPTIONS') {
+                add_header 'Access-Control-Allow-Origin' '*';
+                add_header 'Access-Control-Allow-Methods' 'GET, POST, OPTIONS';
+                add_header 'Access-Control-Allow-Headers' 'DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range';
+                add_header 'Access-Control-Max-Age' 1728000;
+                add_header 'Content-Type' 'text/plain; charset=utf-8';
+                add_header 'Content-Length' 0;
+                return 204;
+            }
+
+            # 1. HLS Manifests (.m3u8)
+            # MUST NOT BE CACHED by the browser/CDN for long, as they change every 2 seconds
+            location ~ \.m3u8$ {
+                add_header Cache-Control "no-cache, no-store, must-revalidate";
+                add_header Access-Control-Allow-Origin *;
+                expires -1;
+            }
+            
+            # 2. HLS Segments (.ts)
+            # SHOULD BE CACHED aggressively. They are immutable static files.
+            location ~ \.ts$ {
+                add_header Cache-Control "public, max-age=31536000, immutable";
+                add_header Access-Control-Allow-Origin *;
+            }
+        }
+    }
+}

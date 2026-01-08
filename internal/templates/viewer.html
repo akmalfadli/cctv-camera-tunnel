@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Camera.Name}} - Live View</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        body { background: #000; color: #fff; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
+        video { width: 100%; max-width: 1280px; aspect-ratio: 16/9; background: #333; }
+        .controls { margin-top: 20px; }
+        .back { color: #aaa; text-decoration: none; position: absolute; top: 20px; left: 20px; }
+    </style>
+</head>
+<body>
+    <a href="/" class="back">← Back to Dashboard</a>
+    <h1>{{.Camera.Name}}</h1>
+    <video id="video" controls autoplay muted></video>
+    <div class="controls">
+        <span id="status">Connecting...</span>
+    </div>
+
+    <script>
+        var video = document.getElementById('video');
+        var videoSrc = '/hls/{{.ID}}/stream.m3u8';
+        
+        // For production, this would point to the CDN URL
+        // var videoSrc = 'https://cdn.example.com/hls/{{.ID}}/stream.m3u8';
+
+        if (Hls.isSupported()) {
+            var hls = new Hls({
+                enableWorker: true,
+                lowLatencyMode: true,
+                backBufferLength: 90
+            });
+            hls.loadSource(videoSrc);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                document.getElementById('status').innerText = 'Live';
+                video.play();
+            });
+            hls.on(Hls.Events.ERROR, function(event, data) {
+                console.error("HLS Error:", data);
+                if (data.fatal) {
+                     document.getElementById('status').innerText = 'Connection Lost. Retrying...';
+                    switch (data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            hls.startLoad();
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            hls.recoverMediaError();
+                            break;
+                        default:
+                            hls.destroy();
+                            break;
+                    }
+                }
+            });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = videoSrc;
+            video.addEventListener('loadedmetadata', function() {
+                video.play();
+            });
+        }
+    </script>
+</body>
+</html>

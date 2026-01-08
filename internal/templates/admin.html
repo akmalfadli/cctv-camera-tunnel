@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Management</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f0f2f5; padding: 20px; max-width: 1000px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .btn { padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-danger { background: #dc3545; }
+        .btn-success { background: #28a745; }
+        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; }
+        
+        /* Modal */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+        .modal-content { background: white; margin: 10% auto; padding: 20px; width: 90%; max-width: 500px; border-radius: 8px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
+        .form-group input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Camera Management</h1>
+        <div>
+            <a href="/" class="btn" style="background: #6c757d;">Back to View</a>
+            <button onclick="openModal()" class="btn btn-success">+ Add Camera</button>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>RTSP URL</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range $id, $cam := .}}
+            <tr>
+                <td>
+                    <strong>{{$cam.Name}}</strong><br>
+                    <small style="color: #666;">{{$cam.Description}}</small>
+                </td>
+                <td style="font-family: monospace; font-size: 0.9em; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {{$cam.RTSPURL}}
+                </td>
+                <td>
+                    <span id="status-{{$id}}" class="badge">Checking...</span>
+                    <br>
+                    <label style="font-size: 0.8em;">
+                        <input type="checkbox" onchange="toggleCamera('{{$id}}', this.checked)" {{if $cam.Enabled}}checked{{end}}> Enabled
+                    </label>
+                </td>
+                <td>
+                    <button onclick="editCamera('{{$id}}')" class="btn" style="padding: 4px 8px; font-size: 0.8em;">Edit</button>
+                    <button onclick="deleteCamera('{{$id}}')" class="btn btn-danger" style="padding: 4px 8px; font-size: 0.8em;">Delete</button>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+
+    <!-- Edit/Add Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle">Add Camera</h2>
+            <form id="cameraForm">
+                <input type="hidden" id="camId">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="camName" required>
+                </div>
+                <div class="form-group">
+                    <label>RTSP URL</label>
+                    <input type="text" id="camUrl" required placeholder="rtsp://user:pass@ip:port/stream">
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <input type="text" id="camDesc">
+                </div>
+                <div class="actions">
+                    <button type="button" onclick="closeModal()" class="btn" style="background: #6c757d;">Cancel</button>
+                    <button type="submit" class="btn btn-success">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Store cameras in JS variable for easy edit population
+        const cameras = {{.}};
+
+        // Status Poller
+        setInterval(() => {
+            fetch('/api/status')
+                .then(r => r.json())
+                .then(data => {
+                    for (const [id, state] of Object.entries(data)) {
+                        const el = document.getElementById(`status-${id}`);
+                        if (el) {
+                            el.innerText = state;
+                            el.style.color = state === 'running' ? 'green' : 'red';
+                        }
+                    }
+                });
+        }, 2000);
+
+        function openModal(id = null) {
+            const modal = document.getElementById('modal');
+            const form = document.getElementById('cameraForm');
+            
+            if (id) {
+                const cam = cameras[id];
+                document.getElementById('modalTitle').innerText = 'Edit Camera';
+                document.getElementById('camId').value = id;
+                document.getElementById('camName').value = cam.Name;
+                document.getElementById('camUrl').value = cam.RTSPURL;
+                document.getElementById('camDesc').value = cam.Description;
+            } else {
+                document.getElementById('modalTitle').innerText = 'Add Camera';
+                form.reset();
+                document.getElementById('camId').value = '';
+            }
+            
+            modal.style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('modal').style.display = 'none';
+        }
+
+        window.editCamera = function(id) {
+            openModal(id);
+        }
+
+        window.toggleCamera = async function(id, enabled) {
+            try {
+                const res = await fetch('/api/admin/camera/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id, enabled })
+                });
+                if (!res.ok) alert('Failed to toggle camera');
+            } catch (e) {
+                alert('Error toggling camera');
+            }
+        }
+
+        window.deleteCamera = async function(id) {
+            if (!confirm('Are you sure you want to delete this camera?')) return;
+            try {
+                const res = await fetch(`/api/admin/camera?id=${id}`, { method: 'DELETE' });
+                if (res.ok) window.location.reload();
+                else alert('Failed to delete');
+            } catch (e) {
+                alert('Error deleting');
+            }
+        }
+
+        document.getElementById('cameraForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('camId').value;
+            const data = {
+                id: id,
+                name: document.getElementById('camName').value,
+                rtsp_url: document.getElementById('camUrl').value,
+                description: document.getElementById('camDesc').value,
+                enabled: true // Default to enabled on create, or preserve? Simplified for now.
+            };
+            
+            // If editing, preserve enabled state from existing
+            if (id && cameras[id]) {
+                data.enabled = cameras[id].Enabled;
+            }
+
+            try {
+                const res = await fetch('/api/admin/camera', {
+                    method: id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (res.ok) window.location.reload();
+                else alert('Failed to save');
+            } catch (e) {
+                alert('Error saving');
+            }
+        });
+    </script>
+</body>
+</html>
