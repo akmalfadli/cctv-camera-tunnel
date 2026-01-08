@@ -1,197 +1,794 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera Management</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Command Center · Admin</title>
     <style>
-        body { font-family: system-ui, sans-serif; background: #f0f2f5; padding: 20px; max-width: 1000px; margin: 0 auto; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .btn { padding: 8px 16px; background: #007bff; color: white; text-decoration: none; border: none; border-radius: 4px; cursor: pointer; }
-        .btn-danger { background: #dc3545; }
-        .btn-success { background: #28a745; }
-        table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
-        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #f8f9fa; font-weight: 600; }
-        
-        /* Modal */
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
-        .modal-content { background: white; margin: 10% auto; padding: 20px; width: 90%; max-width: 500px; border-radius: 8px; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; font-weight: 500; }
-        .form-group input { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+      :root {
+        color-scheme: light dark;
+        font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        --bg: #f4f6fb;
+        --card: #fff;
+        --border: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --primary: #2563eb;
+        --primary-dark: #1d4ed8;
+        --danger: #dc2626;
+        --success: #16a34a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+      }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .top-bar {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        background: rgba(244, 246, 251, 0.95);
+        backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--border);
+        padding: 16px clamp(16px, 4vw, 48px);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .brand {
+        display: flex;
+        flex-direction: column;
+      }
+      .brand span {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      nav {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .nav-link {
+        padding: 8px 12px;
+        border-radius: 999px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .nav-link.active,
+      .nav-link:hover {
+        background: rgba(37, 99, 235, 0.12);
+        color: var(--primary);
+      }
+      .actions {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        border: none;
+        border-radius: 999px;
+        padding: 10px 18px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.15s ease;
+      }
+      .btn:active {
+        transform: scale(0.97);
+      }
+      .btn-primary {
+        background: var(--primary);
+        color: white;
+      }
+      .btn-secondary {
+        background: white;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      main {
+        padding: 32px clamp(16px, 4vw, 48px) 64px;
+        display: flex;
+        flex-direction: column;
+        gap: 32px;
+      }
+      section {
+        background: var(--card);
+        border-radius: 18px;
+        padding: 24px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+      }
+      section h2 {
+        margin: 0 0 8px;
+      }
+      .subheading {
+        color: var(--muted);
+        margin-bottom: 24px;
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+      }
+      .stat-card {
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .stat-label {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .stat-value {
+        font-size: 2rem;
+        font-weight: 600;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+      .badge-success {
+        background: rgba(34, 197, 94, 0.15);
+        color: #15803d;
+      }
+      .badge-danger {
+        background: rgba(248, 113, 113, 0.17);
+        color: #b91c1c;
+      }
+      .badge-muted {
+        background: rgba(148, 163, 184, 0.2);
+        color: #475467;
+      }
+      .table-shell {
+        overflow-x: auto;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 720px;
+      }
+      th,
+      td {
+        padding: 14px 16px;
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+      }
+      th {
+        background: #f9fafb;
+        font-size: 0.85rem;
+        letter-spacing: 0.02em;
+        color: #475467;
+      }
+      tbody tr:hover {
+        background: rgba(37, 99, 235, 0.03);
+      }
+      .camera-name {
+        font-weight: 600;
+      }
+      .camera-meta {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      .input {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        padding: 11px 12px;
+        font-size: 1rem;
+      }
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+      }
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      label {
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+      .switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 500;
+      }
+      .table-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .btn-icon {
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.85rem;
+        border: 1px solid var(--border);
+        background: white;
+        cursor: pointer;
+      }
+      .btn-icon.danger {
+        color: var(--danger);
+        border-color: rgba(220, 38, 38, 0.4);
+      }
+      .btn-icon.primary {
+        color: var(--primary);
+        border-color: rgba(37, 99, 235, 0.4);
+      }
+      .search-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .search-bar input {
+        flex: 1;
+      }
+      .empty-state {
+        text-align: center;
+        padding: 32px;
+        color: var(--muted);
+      }
+      /* Modal */
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.5);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        padding: 16px;
+      }
+      .modal.open {
+        display: flex;
+      }
+      .modal-card {
+        background: white;
+        width: min(520px, 100%);
+        border-radius: 20px;
+        padding: 24px;
+        box-shadow: 0 30px 70px rgba(15, 23, 42, 0.25);
+      }
+      .modal-card h3 {
+        margin: 0 0 16px;
+      }
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        margin-top: 24px;
+      }
+      .toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: #1f2937;
+        color: white;
+        padding: 14px 18px;
+        border-radius: 12px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+        opacity: 0;
+        transform: translateY(16px);
+        transition: opacity 0.2s, transform 0.2s;
+      }
+      .toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      @media (max-width: 720px) {
+        .table-actions {
+          flex-direction: column;
+        }
+        .top-bar {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        nav {
+          width: 100%;
+        }
+        .actions {
+          width: 100%;
+          justify-content: flex-start;
+        }
+      }
     </style>
-</head>
-<body>
-    <div class="header">
-        <h1>Camera Management</h1>
-        <div>
-            <a href="/" class="btn" style="background: #6c757d;">Back to View</a>
-            <button onclick="openModal()" class="btn btn-success">+ Add Camera</button>
-        </div>
-    </div>
+  </head>
+  <body>
+    <header class="top-bar">
+      <div class="brand">
+        <strong>Command Center</strong>
+        <span>Manage cameras, health, and delivery</span>
+      </div>
+      <nav>
+        <a class="nav-link" href="#overview">Overview</a>
+        <a class="nav-link" href="#cameras">Cameras</a>
+        <a class="nav-link" href="#settings">Settings</a>
+        <a class="nav-link" href="/" target="_blank">Public View</a>
+      </nav>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="location.href='/login'">
+          Switch user
+        </button>
+        <button class="btn btn-primary" onclick="openModal()">
+          + Add camera
+        </button>
+      </div>
+    </header>
 
-    <table>
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>RTSP URL</th>
+    <main>
+      <section id="overview">
+        <h2>Operational overview</h2>
+        <p class="subheading">Live telemetry for ingest and delivery health.</p>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Total cameras</span>
+            <span class="stat-value" id="totalCams">{{len .}}</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Streaming</span>
+            <span class="stat-value" id="streamingCams">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Offline</span>
+            <span class="stat-value" id="offlineCams">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Disabled</span>
+            <span class="stat-value" id="disabledCams">0</span>
+          </div>
+        </div>
+      </section>
+
+      <section id="cameras">
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            flex-wrap: wrap;
+            align-items: center;
+          "
+        >
+          <div>
+            <h2>Cameras</h2>
+            <p class="subheading">
+              Control stream state, update RTSP targets, and monitor status.
+            </p>
+          </div>
+          <div class="search-bar">
+            <input
+              id="cameraSearch"
+              class="input"
+              placeholder="Search by name or ID"
+            />
+            <button class="btn btn-primary" onclick="openModal()">
+              Add camera
+            </button>
+          </div>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Camera</th>
+                <th>Stream</th>
                 <th>Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {{range $id, $cam := .}}
-            <tr>
+                <th>Controls</th>
+              </tr>
+            </thead>
+            <tbody id="cameraTable">
+              {{if not .}}
+              <tr>
+                <td colspan="4">
+                  <div class="empty-state">
+                    No cameras yet. Start by adding your first RTSP source.
+                  </div>
+                </td>
+              </tr>
+              {{else}} {{range $id, $cam := .}}
+              <tr
+                data-camera-row
+                data-id="{{$id}}"
+                data-enabled="{{if $cam.Enabled}}true{{else}}false{{end}}"
+              >
                 <td>
-                    <strong>{{$cam.Name}}</strong><br>
-                    <small style="color: #666;">{{$cam.Description}}</small>
-                </td>
-                <td style="font-family: monospace; font-size: 0.9em; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    {{$cam.RTSPURL}}
+                  <div class="camera-name">{{$cam.Name}}</div>
+                  <div class="camera-meta">{{$cam.Description}}</div>
+                  <div class="camera-meta">ID: <code>{{$id}}</code></div>
                 </td>
                 <td>
-                    <span id="status-{{$id}}" class="badge">Checking...</span>
-                    <br>
-                    <label style="font-size: 0.8em;">
-                        <input type="checkbox" onchange="toggleCamera('{{$id}}', this.checked)" {{if $cam.Enabled}}checked{{end}}> Enabled
-                    </label>
+                  <div class="camera-meta">
+                    HLS:
+                    <a href="/hls/{{$id}}/stream.m3u8" target="_blank"
+                      >/hls/{{$id}}/stream.m3u8</a
+                    >
+                  </div>
+                  <div class="camera-meta">
+                    Viewer:
+                    <a href="/view/{{$id}}" target="_blank">/view/{{$id}}</a>
+                  </div>
                 </td>
                 <td>
-                    <button onclick="editCamera('{{$id}}')" class="btn" style="padding: 4px 8px; font-size: 0.8em;">Edit</button>
-                    <button onclick="deleteCamera('{{$id}}')" class="btn btn-danger" style="padding: 4px 8px; font-size: 0.8em;">Delete</button>
+                  <span class="badge badge-muted" data-status-badge="{{$id}}"
+                    >Pending...</span
+                  >
+                  <div class="switch" style="margin-top: 10px">
+                    <input
+                      type="checkbox"
+                      id="toggle-{{$id}}"
+                      {{if
+                      $cam.Enabled}}checked{{end}}
+                      onchange="toggleCamera('{{$id}}', this.checked)"
+                    />
+                    <label for="toggle-{{$id}}">Enabled</label>
+                  </div>
                 </td>
-            </tr>
-            {{end}}
-        </tbody>
-    </table>
-
-    <!-- Edit/Add Modal -->
-    <div id="modal" class="modal">
-        <div class="modal-content">
-            <h2 id="modalTitle">Add Camera</h2>
-            <form id="cameraForm">
-                <input type="hidden" id="camId">
-                <div class="form-group">
-                    <label>Name</label>
-                    <input type="text" id="camName" required>
-                </div>
-                <div class="form-group">
-                    <label>RTSP URL</label>
-                    <input type="text" id="camUrl" required placeholder="rtsp://user:pass@ip:port/stream">
-                </div>
-                <div class="form-group">
-                    <label>Description</label>
-                    <input type="text" id="camDesc">
-                </div>
-                <div class="actions">
-                    <button type="button" onclick="closeModal()" class="btn" style="background: #6c757d;">Cancel</button>
-                    <button type="submit" class="btn btn-success">Save</button>
-                </div>
-            </form>
+                <td>
+                  <div class="table-actions">
+                    <button
+                      class="btn-icon primary"
+                      onclick="editCamera('{{$id}}')"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      class="btn-icon primary"
+                      onclick="window.open('/view/{{$id}}','_blank')"
+                    >
+                      View
+                    </button>
+                    <button
+                      class="btn-icon danger"
+                      onclick="deleteCamera('{{$id}}')"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              {{end}} {{end}}
+            </tbody>
+          </table>
         </div>
+      </section>
+
+      <section id="settings">
+        <h2>Pipeline settings</h2>
+        <p class="subheading">
+          Adjust ingest and HLS behaviour. Changes apply to new streams
+          immediately.
+        </p>
+        <form id="settingsForm" class="form-grid">
+          <div class="form-group">
+            <label for="serverPort">HTTP port</label>
+            <input
+              class="input"
+              id="serverPort"
+              name="server_port"
+              type="number"
+              min="80"
+              max="65535"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="segmentDuration">Segment duration (s)</label>
+            <input
+              class="input"
+              id="segmentDuration"
+              name="segment_duration"
+              type="number"
+              min="1"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="playlistSize">Playlist size</label>
+            <input
+              class="input"
+              id="playlistSize"
+              name="playlist_size"
+              type="number"
+              min="1"
+              required
+            />
+          </div>
+          <div class="form-group" style="grid-column: 1 / -1">
+            <label for="hlsRoot">HLS output directory</label>
+            <input
+              class="input"
+              id="hlsRoot"
+              name="hls_output_root"
+              type="text"
+              required
+            />
+          </div>
+          <div
+            class="form-group"
+            style="
+              grid-column: 1 / -1;
+              display: flex;
+              justify-content: flex-end;
+            "
+          >
+            <button class="btn btn-primary" type="submit">Save settings</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <div id="modal" class="modal">
+      <div class="modal-card">
+        <h3 id="modalTitle">Add camera</h3>
+        <form id="cameraForm">
+          <input type="hidden" id="camId" />
+          <div class="form-group">
+            <label for="camName">Name</label>
+            <input
+              id="camName"
+              class="input"
+              required
+              placeholder="Operations Lobby"
+            />
+          </div>
+          <div class="form-group">
+            <label for="camUrl">RTSP URL</label>
+            <input
+              id="camUrl"
+              class="input"
+              required
+              placeholder="rtsp://user:pass@ip:port/stream"
+            />
+          </div>
+          <div class="form-group">
+            <label for="camDesc">Description</label>
+            <input id="camDesc" class="input" placeholder="Optional notes" />
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick="closeModal()"
+            >
+              Cancel
+            </button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
     </div>
+
+    <div id="toast" class="toast"></div>
 
     <script>
-        // Store cameras in JS variable for easy edit population
-        const cameras = {{.}};
+      const navLinks = document.querySelectorAll(".nav-link");
+      const toast = document.getElementById("toast");
 
-        // Status Poller
-        setInterval(() => {
-            fetch('/api/status')
-                .then(r => r.json())
-                .then(data => {
-                    for (const [id, state] of Object.entries(data)) {
-                        const el = document.getElementById(`status-${id}`);
-                        if (el) {
-                            el.innerText = state;
-                            el.style.color = state === 'running' ? 'green' : 'red';
-                        }
-                    }
-                });
-        }, 2000);
-
-        function openModal(id = null) {
-            const modal = document.getElementById('modal');
-            const form = document.getElementById('cameraForm');
-            
-            if (id) {
-                const cam = cameras[id];
-                document.getElementById('modalTitle').innerText = 'Edit Camera';
-                document.getElementById('camId').value = id;
-                document.getElementById('camName').value = cam.Name;
-                document.getElementById('camUrl').value = cam.RTSPURL;
-                document.getElementById('camDesc').value = cam.Description;
-            } else {
-                document.getElementById('modalTitle').innerText = 'Add Camera';
-                form.reset();
-                document.getElementById('camId').value = '';
-            }
-            
-            modal.style.display = 'block';
-        }
-
-        function closeModal() {
-            document.getElementById('modal').style.display = 'none';
-        }
-
-        window.editCamera = function(id) {
-            openModal(id);
-        }
-
-        window.toggleCamera = async function(id, enabled) {
-            try {
-                const res = await fetch('/api/admin/camera/toggle', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ id, enabled })
-                });
-                if (!res.ok) alert('Failed to toggle camera');
-            } catch (e) {
-                alert('Error toggling camera');
-            }
-        }
-
-        window.deleteCamera = async function(id) {
-            if (!confirm('Are you sure you want to delete this camera?')) return;
-            try {
-                const res = await fetch(`/api/admin/camera?id=${id}`, { method: 'DELETE' });
-                if (res.ok) window.location.reload();
-                else alert('Failed to delete');
-            } catch (e) {
-                alert('Error deleting');
-            }
-        }
-
-        document.getElementById('cameraForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('camId').value;
-            const data = {
-                id: id,
-                name: document.getElementById('camName').value,
-                rtsp_url: document.getElementById('camUrl').value,
-                description: document.getElementById('camDesc').value,
-                enabled: true // Default to enabled on create, or preserve? Simplified for now.
-            };
-            
-            // If editing, preserve enabled state from existing
-            if (id && cameras[id]) {
-                data.enabled = cameras[id].Enabled;
-            }
-
-            try {
-                const res = await fetch('/api/admin/camera', {
-                    method: id ? 'PUT' : 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-                if (res.ok) window.location.reload();
-                else alert('Failed to save');
-            } catch (e) {
-                alert('Error saving');
-            }
+      function setActiveNav() {
+        const hash = window.location.hash || "#overview";
+        navLinks.forEach((link) => {
+          link.classList.toggle("active", link.getAttribute("href") === hash);
         });
+      }
+      window.addEventListener("hashchange", setActiveNav);
+      setActiveNav();
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("show");
+        setTimeout(() => toast.classList.remove("show"), 2500);
+      }
+
+      function openModal(id = null) {
+        const modal = document.getElementById("modal");
+        const form = document.getElementById("cameraForm");
+        form.reset();
+        document.getElementById("camId").value = "";
+        document.getElementById("modalTitle").innerText = id
+          ? "Edit camera"
+          : "Add camera";
+        modal.classList.add("open");
+        if (id) {
+          fetch(`/api/admin/camera/get?id=${encodeURIComponent(id)}`)
+            .then((res) => {
+              if (!res.ok) throw new Error("Failed to load camera");
+              return res.json();
+            })
+            .then((cam) => {
+              document.getElementById("camId").value = cam.ID;
+              document.getElementById("camName").value = cam.Name;
+              document.getElementById("camUrl").value = cam.RTSPURL || "";
+              document.getElementById("camDesc").value = cam.Description || "";
+            })
+            .catch(() => showToast("Unable to load camera details"));
+        }
+      }
+
+      function closeModal() {
+        document.getElementById("modal").classList.remove("open");
+      }
+
+      document
+        .getElementById("cameraForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const id = document.getElementById("camId").value;
+          const row = id ? document.querySelector(`tr[data-id="${id}"]`) : null;
+          const payload = {
+            id,
+            name: document.getElementById("camName").value.trim(),
+            rtsp_url: document.getElementById("camUrl").value.trim(),
+            description: document.getElementById("camDesc").value.trim(),
+            enabled: row ? row.dataset.enabled === "true" : true,
+          };
+          try {
+            const res = await fetch("/api/admin/camera", {
+              method: id ? "PUT" : "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error();
+            closeModal();
+            window.location.reload();
+          } catch (_) {
+            showToast("Failed to save camera");
+          }
+        });
+
+      window.toggleCamera = async function (id, enabled) {
+        try {
+          const res = await fetch("/api/admin/camera/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, enabled }),
+          });
+          if (!res.ok) throw new Error();
+          const row = document.querySelector(`tr[data-id="${id}"]`);
+          if (row) row.dataset.enabled = enabled ? "true" : "false";
+          updateCounts();
+        } catch (_) {
+          showToast("Unable to toggle camera");
+          const toggle = document.getElementById(`toggle-${id}`);
+          if (toggle) toggle.checked = !enabled;
+        }
+      };
+
+      window.deleteCamera = async function (id) {
+        if (!confirm("Delete this camera permanently?")) return;
+        try {
+          const res = await fetch(
+            `/api/admin/camera?id=${encodeURIComponent(id)}`,
+            { method: "DELETE" }
+          );
+          if (!res.ok) throw new Error();
+          window.location.reload();
+        } catch (_) {
+          showToast("Failed to delete camera");
+        }
+      };
+
+      window.editCamera = function (id) {
+        openModal(id);
+      };
+
+      async function refreshStatus() {
+        try {
+          const status = await fetch("/api/status").then((r) => r.json());
+          Object.entries(status).forEach(([id, state]) => {
+            const badge = document.querySelector(`[data-status-badge="${id}"]`);
+            if (!badge) return;
+            badge.textContent = state;
+            badge.className =
+              "badge " +
+              (state === "running" ? "badge-success" : "badge-danger");
+          });
+          updateCounts(status);
+        } catch (_) {
+          showToast("Status refresh failed");
+        }
+      }
+
+      function updateCounts(statusMap = {}) {
+        const rows = document.querySelectorAll("[data-camera-row]");
+        const total = rows.length;
+        let streaming = 0;
+        let offline = 0;
+        let disabled = 0;
+        rows.forEach((row) => {
+          const id = row.dataset.id;
+          const enabled = row.dataset.enabled === "true";
+          if (!enabled) {
+            disabled++;
+            return;
+          }
+          const state = statusMap[id];
+          if (state === "running") streaming++;
+          else offline++;
+        });
+        document.getElementById("totalCams").textContent = total;
+        document.getElementById("streamingCams").textContent = streaming;
+        document.getElementById("offlineCams").textContent = offline;
+        document.getElementById("disabledCams").textContent = disabled;
+      }
+
+      function filterCameras(value) {
+        const query = value.toLowerCase();
+        document.querySelectorAll("[data-camera-row]").forEach((row) => {
+          const text = row.textContent.toLowerCase();
+          row.style.display = text.includes(query) ? "" : "none";
+        });
+      }
+
+      document
+        .getElementById("cameraSearch")
+        .addEventListener("input", (e) => filterCameras(e.target.value));
+
+      document
+        .getElementById("settingsForm")
+        .addEventListener("submit", async (e) => {
+          e.preventDefault();
+          const payload = {
+            server_port: Number(document.getElementById("serverPort").value),
+            segment_duration: Number(
+              document.getElementById("segmentDuration").value
+            ),
+            playlist_size: Number(
+              document.getElementById("playlistSize").value
+            ),
+            hls_output_root: document.getElementById("hlsRoot").value.trim(),
+          };
+          try {
+            const res = await fetch("/api/admin/settings", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            showToast("Settings saved");
+          } catch (err) {
+            showToast(
+              typeof err === "string" ? err : "Failed to save settings"
+            );
+          }
+        });
+
+      async function hydrateSettings() {
+        try {
+          const data = await fetch("/api/admin/settings").then((r) => r.json());
+          document.getElementById("serverPort").value = data.server_port;
+          document.getElementById("segmentDuration").value =
+            data.segment_duration;
+          document.getElementById("playlistSize").value = data.playlist_size;
+          document.getElementById("hlsRoot").value = data.hls_output_root;
+        } catch (_) {
+          showToast("Unable to load settings");
+        }
+      }
+
+      hydrateSettings();
+      refreshStatus();
+      updateCounts();
+      setInterval(refreshStatus, 4000);
     </script>
-</body>
+  </body>
 </html>

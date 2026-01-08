@@ -2,7 +2,7 @@ package camera
 
 import (
 	"sync"
-	
+
 	"camera-tunnel/internal/config"
 )
 
@@ -21,13 +21,16 @@ func (r *Registry) Get(id string) (config.Camera, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	cam, ok := r.config.Cameras[id]
+	if ok {
+		cam.ID = id
+	}
 	return cam, ok
 }
 
 func (r *Registry) GetAll() map[string]config.Camera {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	
+
 	cams := make(map[string]config.Camera)
 	for k, v := range r.config.Cameras {
 		v.ID = k // Ensure ID is populated
@@ -39,15 +42,14 @@ func (r *Registry) GetAll() map[string]config.Camera {
 func (r *Registry) Set(id string, cam config.Camera) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
-	r.config.UpdateCamera(id, cam)
-	return r.config.Save()
+
+	cam.ID = id
+	return r.config.UpsertCamera(cam)
 }
 
 func (r *Registry) Delete(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
-	r.config.DeleteCamera(id)
-	return r.config.Save()
+
+	return r.config.DeleteCamera(id)
 }

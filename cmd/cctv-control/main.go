@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -15,24 +16,40 @@ import (
 	"camera-tunnel/internal/config"
 	"camera-tunnel/internal/ffmpeg"
 	"camera-tunnel/internal/hls"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	configPath := flag.String("config", "camera_config.json", "Path to configuration file")
+	dbPath := flag.String("db", "cctv.db", "Path to sqlite database")
+	envPath := flag.String("env", ".env", "Path to environment file (optional)")
 	flag.Parse()
 
-	// 1. Load Configuration
-	cfg, err := config.LoadConfig(*configPath)
+	if *envPath != "" {
+		if err := godotenv.Load(*envPath); err != nil {
+			var pathErr *os.PathError
+			if !errors.As(err, &pathErr) {
+				log.Fatalf("Failed to load %s: %v", *envPath, err)
+			}
+			if pathErr.Path != "" {
+				log.Printf("Env file %s not found, continuing", pathErr.Path)
+			}
+		}
+	}
+
+	// 1. Load Configuration from SQLite
+	cfg, err := config.LoadConfig(*dbPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	defer cfg.Close()
 
 	// 2. Initialize Components
 	authMgr := auth.NewAuthenticator(cfg)
 	camRegistry := camera.NewRegistry(cfg)
 	streamMgr := ffmpeg.NewStreamManager(cfg)
 	hlsMgr := hls.NewManager(cfg)
-	
+
 	// 3. Ensure Directories
 	if err := hlsMgr.EnsureDirectory(); err != nil {
 		log.Fatalf("Failed to create HLS directory: %v", err)

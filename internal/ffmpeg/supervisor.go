@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,13 +32,17 @@ type StreamManager struct {
 }
 
 type CameraProcess struct {
-	CameraID  string
-	Config    config.Camera
-	Cmd       *exec.Cmd
-	State     ProcessState
-	LastError error
-	mu        sync.Mutex
-	cancel    context.CancelFunc
+	CameraID        string
+	Config          config.Camera
+	Cmd             *exec.Cmd
+	State           ProcessState
+	LastError       error
+	mu              sync.Mutex
+	cancel          context.CancelFunc
+	LastBitrateKbps float64
+	LastSegmentAt   time.Time
+	RestartCount    int
+	StartTime       time.Time
 }
 
 func NewStreamManager(cfg *config.Config) *StreamManager {
@@ -65,7 +70,7 @@ func (sm *StreamManager) StartStream(id string, cam config.Camera) {
 		sm.mu.Unlock()
 		return // Already running
 	}
-	
+
 	proc := &CameraProcess{
 		CameraID: id,
 		Config:   cam,
@@ -94,6 +99,17 @@ func (sm *StreamManager) runFFmpegLoop(proc *CameraProcess, outputDir string) {
 		case <-sm.ctx.Done():
 			return
 		default:
+			rtspURL, err := proc.Config.EffectiveRTSP()
+			if err != nil {
+				proc.mu.Lock()
+				proc.State = StateError
+				proc.LastError = err
+				proc.mu.Unlock()
+				log.Printf("Camera %s missing RTSP credentials: %v", proc.CameraID, err)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+
 			// Prepare context for this run
 			ctx, cancel := context.WithCancel(sm.ctx)
 			proc.mu.Lock()
@@ -105,21 +121,25 @@ func (sm *StreamManager) runFFmpegLoop(proc *CameraProcess, outputDir string) {
 			segmentFilename := filepath.Join(outputDir, "segment_%03d.ts")
 			playlistFilename := filepath.Join(outputDir, "stream.m3u8")
 
+			fps := proc.Config.EffectiveFPS(30)
+			gop := proc.Config.EffectiveGOP(fps * sm.config.SegmentDuration)
+
 			args := []string{
 				"-rtsp_transport", "tcp",
-				"-i", proc.Config.RTSPURL,
-				
+				"-i", rtspURL,
+
 				// Video Codec
 				"-c:v", "libx264",
 				"-preset", "veryfast",
 				"-tune", "zerolatency",
 				"-profile:v", "high",
 				"-level", "4.0",
-				
+
 				// Keyframe alignment (crucial for HLS)
-				"-g", fmt.Sprintf("%d", sm.config.SegmentDuration*30), // 2s GOP at 30fps
+				"-g", fmt.Sprintf("%d", gop),
 				"-sc_threshold", "0",
-				
+				"-r", fmt.Sprintf("%d", fps),
+
 				// Audio Codec
 				"-c:a", "aac",
 				"-b:a", "128k",
@@ -135,19 +155,30 @@ func (sm *StreamManager) runFFmpegLoop(proc *CameraProcess, outputDir string) {
 				playlistFilename,
 			}
 
+			if proc.Config.Bitrate != "" {
+				args = append(args, "-b:v", proc.Config.Bitrate)
+			}
+
 			cmd := exec.CommandContext(ctx, "ffmpeg", args...)
-			
+
 			// Capture stderr for debugging
 			// cmd.Stderr = os.Stderr // Uncomment for verbose logs
 
 			proc.mu.Lock()
 			proc.Cmd = cmd
 			proc.State = StateRunning
+			proc.LastError = nil
+			proc.StartTime = time.Now()
+			proc.RestartCount++
 			proc.mu.Unlock()
 
+			segmentCtx, segmentCancel := context.WithCancel(ctx)
+			go sm.pollSegments(segmentCtx, proc, outputDir)
+
 			log.Printf("Starting FFmpeg for camera %s", proc.CameraID)
-			err := cmd.Run()
-			
+			err = cmd.Run()
+			segmentCancel()
+
 			proc.mu.Lock()
 			if ctx.Err() != nil {
 				// Context cancelled (Shutdown)
@@ -155,7 +186,7 @@ func (sm *StreamManager) runFFmpegLoop(proc *CameraProcess, outputDir string) {
 				proc.mu.Unlock()
 				return
 			}
-			
+
 			// Unexpected exit
 			proc.State = StateError
 			proc.LastError = err
@@ -171,7 +202,7 @@ func (sm *StreamManager) StopAll() {
 	sm.cancel() // Cancel main context
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	
+
 	// Wait for processes? In a real supervisor we might waitgroup here.
 	// But context cancellation should kill the exec.CommandContext
 }
@@ -193,8 +224,8 @@ func (sm *StreamManager) StopStream(id string) {
 	}
 	proc.State = StateStopped
 	proc.mu.Unlock()
-	
-	// Wait a bit or ensure the loop exits? 
+
+	// Wait a bit or ensure the loop exits?
 	// The cancel() call triggers ctx.Done() in runFFmpegLoop, causing it to return.
 }
 
@@ -207,7 +238,7 @@ func (sm *StreamManager) RestartStream(id string, newConfig config.Camera) {
 func (sm *StreamManager) GetStatus() map[string]string {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
-	
+
 	status := make(map[string]string)
 	for id, proc := range sm.processes {
 		proc.mu.Lock()
@@ -215,4 +246,80 @@ func (sm *StreamManager) GetStatus() map[string]string {
 		proc.mu.Unlock()
 	}
 	return status
+}
+
+type CameraMetrics struct {
+	State           ProcessState `json:"state"`
+	LastError       string       `json:"last_error,omitempty"`
+	LastBitrateKbps float64      `json:"bitrate_kbps"`
+	LastSegmentAt   time.Time    `json:"last_segment_at"`
+	RestartCount    int          `json:"restart_count"`
+}
+
+func (sm *StreamManager) GetMetrics() map[string]CameraMetrics {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	metrics := make(map[string]CameraMetrics, len(sm.processes))
+	for id, proc := range sm.processes {
+		proc.mu.Lock()
+		lastErr := ""
+		if proc.LastError != nil {
+			lastErr = proc.LastError.Error()
+		}
+		metrics[id] = CameraMetrics{
+			State:           proc.State,
+			LastError:       lastErr,
+			LastBitrateKbps: proc.LastBitrateKbps,
+			LastSegmentAt:   proc.LastSegmentAt,
+			RestartCount:    proc.RestartCount,
+		}
+		proc.mu.Unlock()
+	}
+	return metrics
+}
+
+func (sm *StreamManager) pollSegments(ctx context.Context, proc *CameraProcess, outputDir string) {
+	segmentSeconds := float64(sm.config.SegmentDuration)
+	if segmentSeconds <= 0 {
+		segmentSeconds = 2
+	}
+	ticker := time.NewTicker(time.Duration(segmentSeconds * float64(time.Second)))
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fi, err := latestSegmentInfo(outputDir)
+			if err != nil || fi == nil {
+				continue
+			}
+			bitrate := (float64(fi.Size()) * 8) / segmentSeconds / 1000
+			proc.mu.Lock()
+			proc.LastSegmentAt = fi.ModTime()
+			proc.LastBitrateKbps = bitrate
+			proc.mu.Unlock()
+		}
+	}
+}
+
+func latestSegmentInfo(dir string) (os.FileInfo, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	var latest os.FileInfo
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".ts") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if latest == nil || info.ModTime().After(latest.ModTime()) {
+			latest = info
+		}
+	}
+	return latest, nil
 }
