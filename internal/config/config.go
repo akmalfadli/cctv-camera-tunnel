@@ -72,6 +72,10 @@ func LoadConfig(dbPath string) (*Config, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := cfg.ensureUsers(context.Background()); err != nil {
+		db.Close()
+		return nil, err
+	}
 	if err := cfg.refresh(context.Background()); err != nil {
 		db.Close()
 		return nil, err
@@ -111,6 +115,19 @@ func (c *Config) migrate(ctx context.Context) error {
         FOR EACH ROW BEGIN
             UPDATE cameras SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
         END;`,
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,
+			password_hash TEXT NOT NULL,
+			role TEXT NOT NULL DEFAULT 'admin',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE TRIGGER IF NOT EXISTS users_updated_at
+		AFTER UPDATE ON users
+		FOR EACH ROW BEGIN
+			UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+		END;`,
 	}
 	for _, stmt := range stmts {
 		if _, err := c.db.ExecContext(ctx, stmt); err != nil {
@@ -225,12 +242,54 @@ func (c *Config) ensureSeed(ctx context.Context) error {
 	return nil
 }
 
+func (c *Config) ensureUsers(ctx context.Context) error {
+	var count int
+	if err := c.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users").Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	var username, passwordHash string
+	err := c.db.QueryRowContext(ctx, `SELECT auth_username, password_hash FROM app_settings WHERE id = ?`, settingsRowID).Scan(&username, &passwordHash)
+	if err != nil {
+		username = "admin"
+		passwordHash = ""
+	}
+	username = strings.TrimSpace(username)
+	if username == "" {
+		username = "admin"
+	}
+	if passwordHash == "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+		passwordHash = string(hash)
+		log.Println("Initialized default admin credentials (admin/admin). Please change them via the admin console.")
+	}
+
+	_, err = c.db.ExecContext(ctx, `INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')`, username, passwordHash)
+	return err
+}
+
 func (c *Config) refresh(ctx context.Context) error {
 	row := c.db.QueryRowContext(ctx, `SELECT server_port, metrics_port, hls_output_root, segment_duration, playlist_size, auth_username, password_hash, jwt_secret FROM app_settings WHERE id = ?`, settingsRowID)
 	var cfg Config
 	var auth AuthConfig
-	if err := row.Scan(&cfg.ServerPort, &cfg.MetricsPort, &cfg.HLSOutputRoot, &cfg.SegmentDuration, &cfg.PlaylistSize, &auth.Username, &auth.PasswordHash, &auth.JWTSecret); err != nil {
+	var legacyUsername, legacyHash string
+	if err := row.Scan(&cfg.ServerPort, &cfg.MetricsPort, &cfg.HLSOutputRoot, &cfg.SegmentDuration, &cfg.PlaylistSize, &legacyUsername, &legacyHash, &auth.JWTSecret); err != nil {
 		return err
+	}
+	if err := c.loadAuthFromUsers(ctx, &auth); err != nil {
+		return err
+	}
+	if auth.Username == "" {
+		auth.Username = legacyUsername
+	}
+	if auth.PasswordHash == "" {
+		auth.PasswordHash = legacyHash
 	}
 	cfg.Auth = auth
 
@@ -263,6 +322,18 @@ func (c *Config) refresh(ctx context.Context) error {
 	c.Cameras = camMap
 	c.mu.Unlock()
 	return nil
+}
+
+func (c *Config) loadAuthFromUsers(ctx context.Context, auth *AuthConfig) error {
+	row := c.db.QueryRowContext(ctx, `SELECT username, password_hash FROM users ORDER BY id LIMIT 1`)
+	switch err := row.Scan(&auth.Username, &auth.PasswordHash); err {
+	case nil:
+		return nil
+	case sql.ErrNoRows:
+		return nil
+	default:
+		return err
+	}
 }
 
 func (c *Config) SettingsSnapshot() AppSettings {
@@ -300,7 +371,16 @@ func (c *Config) UpdateSettings(s AppSettings) error {
 	if err := os.MkdirAll(s.HLSOutputRoot, 0o755); err != nil {
 		return fmt.Errorf("ensure hls root: %w", err)
 	}
-	_, err := c.db.ExecContext(context.Background(), `UPDATE app_settings SET
+	tx, err := c.db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.ExecContext(context.Background(), `UPDATE app_settings SET
 		server_port = ?,
 		auth_username = ?,
 		password_hash = ?,
@@ -309,8 +389,23 @@ func (c *Config) UpdateSettings(s AppSettings) error {
 		playlist_size = ?
 	WHERE id = ?`,
 		s.ServerPort, username, passwordHash, s.HLSOutputRoot, s.SegmentDuration, s.PlaylistSize, settingsRowID,
-	)
-	if err != nil {
+	); err != nil {
+		return err
+	}
+	var userID int
+	switch err = tx.QueryRowContext(context.Background(), `SELECT id FROM users ORDER BY id LIMIT 1`).Scan(&userID); err {
+	case nil:
+		if _, err = tx.ExecContext(context.Background(), `UPDATE users SET username = ?, password_hash = ? WHERE id = ?`, username, passwordHash, userID); err != nil {
+			return err
+		}
+	case sql.ErrNoRows:
+		if _, err = tx.ExecContext(context.Background(), `INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')`, username, passwordHash); err != nil {
+			return err
+		}
+	default:
+		return err
+	}
+	if err = tx.Commit(); err != nil {
 		return err
 	}
 	return c.refresh(context.Background())
