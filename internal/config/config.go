@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +39,8 @@ type AppSettings struct {
 	HLSOutputRoot   string `json:"hls_output_root"`
 	SegmentDuration int    `json:"segment_duration"`
 	PlaylistSize    int    `json:"playlist_size"`
+	AuthUsername    string `json:"auth_username"`
+	NewPassword     string `json:"new_password"`
 }
 
 type Camera struct {
@@ -178,9 +182,13 @@ func (c *Config) ensureSeed(ctx context.Context) error {
 	hlsOutputRoot := "./hls"
 	segmentDuration := 2
 	playlistSize := 5
-	username := "admin"
+	username := os.Getenv("CCTV_ADMIN_USERNAME")
+	if username == "" {
+		username = "admin"
+	}
 
 	passwordHash := os.Getenv("CCTV_ADMIN_PASSWORD_HASH")
+	usedDefault := false
 	if passwordHash == "" {
 		if plain := os.Getenv("CCTV_ADMIN_PASSWORD"); plain != "" {
 			if hash, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost); err == nil {
@@ -194,6 +202,7 @@ func (c *Config) ensureSeed(ctx context.Context) error {
 			return err
 		}
 		passwordHash = string(hash)
+		usedDefault = true
 	}
 
 	jwtSecret := os.Getenv("CCTV_JWT_SECRET")
@@ -209,6 +218,9 @@ func (c *Config) ensureSeed(ctx context.Context) error {
 	)
 	if err != nil {
 		return err
+	}
+	if usedDefault {
+		log.Println("Initialized default admin credentials (admin/admin). Please change them via the admin console.")
 	}
 	return nil
 }
@@ -261,6 +273,7 @@ func (c *Config) SettingsSnapshot() AppSettings {
 		HLSOutputRoot:   c.HLSOutputRoot,
 		SegmentDuration: c.SegmentDuration,
 		PlaylistSize:    c.PlaylistSize,
+		AuthUsername:    c.Auth.Username,
 	}
 }
 
@@ -268,16 +281,34 @@ func (c *Config) UpdateSettings(s AppSettings) error {
 	if err := validateSettings(s); err != nil {
 		return err
 	}
+	currentUser, currentHash, _ := c.Credentials()
+	username := strings.TrimSpace(s.AuthUsername)
+	if username == "" {
+		username = currentUser
+	}
+	if username == "" {
+		return errors.New("auth username required")
+	}
+	passwordHash := currentHash
+	if s.NewPassword != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(s.NewPassword), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("hash password: %w", err)
+		}
+		passwordHash = string(hash)
+	}
 	if err := os.MkdirAll(s.HLSOutputRoot, 0o755); err != nil {
 		return fmt.Errorf("ensure hls root: %w", err)
 	}
 	_, err := c.db.ExecContext(context.Background(), `UPDATE app_settings SET
 		server_port = ?,
+		auth_username = ?,
+		password_hash = ?,
 		hls_output_root = ?,
 		segment_duration = ?,
 		playlist_size = ?
 	WHERE id = ?`,
-		s.ServerPort, s.HLSOutputRoot, s.SegmentDuration, s.PlaylistSize, settingsRowID,
+		s.ServerPort, username, passwordHash, s.HLSOutputRoot, s.SegmentDuration, s.PlaylistSize, settingsRowID,
 	)
 	if err != nil {
 		return err

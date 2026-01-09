@@ -492,6 +492,27 @@
             />
           </div>
           <div class="form-group">
+            <label for="authUsername">Admin username</label>
+            <input
+              class="input"
+              id="authUsername"
+              name="auth_username"
+              type="text"
+              placeholder="admin"
+              required
+            />
+          </div>
+          <div class="form-group">
+            <label for="newPassword">New password</label>
+            <input
+              class="input"
+              id="newPassword"
+              name="new_password"
+              type="password"
+              placeholder="Leave blank to keep current"
+            />
+          </div>
+          <div class="form-group">
             <label for="segmentDuration">Segment duration (s)</label>
             <input
               class="input"
@@ -749,6 +770,12 @@
           e.preventDefault();
           const payload = {
             server_port: Number(document.getElementById("serverPort").value),
+            auth_username: document
+              .getElementById("authUsername")
+              .value.trim(),
+            new_password: document
+              .getElementById("newPassword")
+              .value,
             segment_duration: Number(
               document.getElementById("segmentDuration").value
             ),
@@ -765,6 +792,7 @@
             });
             if (!res.ok) throw new Error(await res.text());
             showToast("Settings saved");
+            document.getElementById("newPassword").value = "";
           } catch (err) {
             showToast(
               typeof err === "string" ? err : "Failed to save settings"
@@ -776,6 +804,7 @@
         try {
           const data = await fetch("/api/admin/settings").then((r) => r.json());
           document.getElementById("serverPort").value = data.server_port;
+          document.getElementById("authUsername").value = data.auth_username || "";
           document.getElementById("segmentDuration").value =
             data.segment_duration;
           document.getElementById("playlistSize").value = data.playlist_size;
