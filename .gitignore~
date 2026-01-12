@@ -20,6 +20,7 @@ coverage.*
 profile.cov
 
 # Dependency directories (remove the comment below to include it)
+hls/
 
 # Go workspace file
 go.work
