@@ -28,21 +28,22 @@ func NewAuthenticator(cfg *config.Config) *Authenticator {
 func (a *Authenticator) Login(username, password string) (string, error) {
 	expectedUser, passwordHash, jwtSecret := a.config.Credentials()
 
-	// DEBUG: log what we're comparing
-	fmt.Printf("[DEBUG] Login attempt - user: %q, expected: %q\n", username, expectedUser)
-	fmt.Printf("[DEBUG] Hash from DB (first 20 chars): %q\n", passwordHash[:min(20, len(passwordHash))])
-	fmt.Printf("[DEBUG] Password length: %d\n", len(password))
+	// Ensure uniform timing regardless of whether the username exists
+	var targetHash string
+	if username == expectedUser {
+		targetHash = passwordHash
+	} else {
+		// A dummy bcrypt hash (cost 10) to consume comparable CPU time
+		targetHash = "$2a$10$S9R3k6J0qGzVbW1E3yRzUe5F3qGzVbW1E3yRzUe5F3qGzVbW1E3y."
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(targetHash), []byte(password)); err != nil {
+		return "", fmt.Errorf("invalid credentials")
+	}
 
 	if username != expectedUser {
-		fmt.Println("[DEBUG] Username mismatch")
 		return "", fmt.Errorf("invalid credentials")
 	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
-		fmt.Printf("[DEBUG] bcrypt.CompareHashAndPassword error: %v\n", err)
-		return "", fmt.Errorf("invalid credentials")
-	}
-	fmt.Println("[DEBUG] Password verified OK")
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user": username,
@@ -102,10 +103,10 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 
 func isPublicPath(path string) bool {
 	switch path {
-	case "/api/login", "/login", "/api/cameras", "/favicon.ico":
+	case "/api/login", "/login", "/favicon.ico":
 		return true
 	}
-	return strings.HasPrefix(path, "/hls/") || strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/view/")
+	return strings.HasPrefix(path, "/static/")
 }
 
 func handleUnauthorized(w http.ResponseWriter, r *http.Request) {
