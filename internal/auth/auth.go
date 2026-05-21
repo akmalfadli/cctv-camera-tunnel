@@ -103,10 +103,10 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 
 func isPublicPath(path string) bool {
 	switch path {
-	case "/api/login", "/login", "/favicon.ico":
+	case "/api/login", "/login", "/api/cameras", "/favicon.ico":
 		return true
 	}
-	return strings.HasPrefix(path, "/static/")
+	return strings.HasPrefix(path, "/hls/") || strings.HasPrefix(path, "/static/") || strings.HasPrefix(path, "/view/")
 }
 
 func handleUnauthorized(w http.ResponseWriter, r *http.Request) {
