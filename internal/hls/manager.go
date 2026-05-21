@@ -28,8 +28,30 @@ func (m *Manager) Cleanup() {
 }
 
 func (m *Manager) pruneOldFiles() {
-	// Walk hls dir and remove .ts files older than 1 hour (just in case)
-	// Implementation skipped for brevity, relies on FFmpeg hls_flags delete_segments
+	hlsRoot := m.config.HLSOutputRoot
+	if hlsRoot == "" {
+		return
+	}
+
+	threshold := time.Now().Add(-1 * time.Hour)
+	_ = filepath.WalkDir(hlsRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+
+		if info.ModTime().Before(threshold) {
+			_ = os.Remove(path)
+		}
+		return nil
+	})
 }
 
 func (m *Manager) GetStreamPath(cameraID string) string {

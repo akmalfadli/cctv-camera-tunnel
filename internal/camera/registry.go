@@ -1,13 +1,10 @@
 package camera
 
 import (
-	"sync"
-
 	"camera-tunnel/internal/config"
 )
 
 type Registry struct {
-	mu     sync.RWMutex
 	config *config.Config
 }
 
@@ -18,9 +15,7 @@ func NewRegistry(cfg *config.Config) *Registry {
 }
 
 func (r *Registry) Get(id string) (config.Camera, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	cam, ok := r.config.Cameras[id]
+	cam, ok := r.config.GetCamera(id)
 	if ok {
 		cam.ID = id
 	}
@@ -28,11 +23,8 @@ func (r *Registry) Get(id string) (config.Camera, bool) {
 }
 
 func (r *Registry) GetAll() map[string]config.Camera {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	cams := make(map[string]config.Camera)
-	for k, v := range r.config.Cameras {
+	cams := r.config.GetCameras()
+	for k, v := range cams {
 		v.ID = k // Ensure ID is populated
 		cams[k] = v
 	}
@@ -40,16 +32,10 @@ func (r *Registry) GetAll() map[string]config.Camera {
 }
 
 func (r *Registry) Set(id string, cam config.Camera) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	cam.ID = id
 	return r.config.UpsertCamera(cam)
 }
 
 func (r *Registry) Delete(id string) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	return r.config.DeleteCamera(id)
 }

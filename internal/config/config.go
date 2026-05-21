@@ -2,7 +2,9 @@ package config
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -224,7 +226,22 @@ func (c *Config) ensureSeed(ctx context.Context) error {
 
 	jwtSecret := os.Getenv("CCTV_JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = fmt.Sprintf("secret-%d", time.Now().Unix())
+		keyBytes, err := os.ReadFile(".jwt.key")
+		if err == nil && len(keyBytes) > 0 {
+			jwtSecret = strings.TrimSpace(string(keyBytes))
+			log.Println("[INFO] Loaded existing JWT secret key from .jwt.key file.")
+		} else {
+			b := make([]byte, 32)
+			if _, err := rand.Read(b); err != nil {
+				return fmt.Errorf("failed to generate secure jwt secret: %w", err)
+			}
+			jwtSecret = hex.EncodeToString(b)
+			if err := os.WriteFile(".jwt.key", []byte(jwtSecret), 0600); err != nil {
+				log.Printf("[WARNING] Failed to write JWT secret to .jwt.key: %v", err)
+			} else {
+				log.Println("[INFO] Generated new secure JWT secret key and saved to .jwt.key file.")
+			}
+		}
 	}
 
 	_, err := c.db.ExecContext(ctx, `INSERT INTO app_settings (
@@ -281,6 +298,12 @@ func (c *Config) refresh(ctx context.Context) error {
 	var legacyUsername, legacyHash string
 	if err := row.Scan(&cfg.ServerPort, &cfg.MetricsPort, &cfg.HLSOutputRoot, &cfg.SegmentDuration, &cfg.PlaylistSize, &legacyUsername, &legacyHash, &auth.JWTSecret); err != nil {
 		return err
+	}
+	if auth.JWTSecret != "" {
+		if _, err := os.Stat(".jwt.key"); os.IsNotExist(err) {
+			_ = os.WriteFile(".jwt.key", []byte(auth.JWTSecret), 0600)
+			log.Println("[INFO] Persisted existing JWT secret from database to .jwt.key")
+		}
 	}
 	if err := c.loadAuthFromUsers(ctx, &auth); err != nil {
 		return err
@@ -464,6 +487,23 @@ func (c *Config) DeleteCamera(id string) error {
 	delete(c.Cameras, id)
 	c.mu.Unlock()
 	return nil
+}
+
+func (c *Config) GetCamera(id string) (Camera, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	cam, ok := c.Cameras[id]
+	return cam, ok
+}
+
+func (c *Config) GetCameras() map[string]Camera {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	cams := make(map[string]Camera, len(c.Cameras))
+	for k, v := range c.Cameras {
+		cams[k] = v
+	}
+	return cams
 }
 
 func (c *Config) Credentials() (string, string, string) {

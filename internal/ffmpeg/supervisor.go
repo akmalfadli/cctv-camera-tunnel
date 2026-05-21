@@ -43,6 +43,7 @@ type CameraProcess struct {
 	LastSegmentAt   time.Time
 	RestartCount    int
 	StartTime       time.Time
+	Terminated      chan struct{}
 }
 
 func NewStreamManager(cfg *config.Config) *StreamManager {
@@ -56,7 +57,8 @@ func NewStreamManager(cfg *config.Config) *StreamManager {
 }
 
 func (sm *StreamManager) StartAll() {
-	for id, cam := range sm.config.Cameras {
+	cams := sm.config.GetCameras()
+	for id, cam := range cams {
 		if !cam.Enabled {
 			continue
 		}
@@ -72,9 +74,10 @@ func (sm *StreamManager) StartStream(id string, cam config.Camera) {
 	}
 
 	proc := &CameraProcess{
-		CameraID: id,
-		Config:   cam,
-		State:    StateStarting,
+		CameraID:   id,
+		Config:     cam,
+		State:      StateStarting,
+		Terminated: make(chan struct{}),
 	}
 	sm.processes[id] = proc
 	sm.mu.Unlock()
@@ -94,6 +97,7 @@ func (sm *StreamManager) StartStream(id string, cam config.Camera) {
 }
 
 func (sm *StreamManager) runFFmpegLoop(proc *CameraProcess, outputDir string) {
+	defer close(proc.Terminated)
 	for {
 		select {
 		case <-sm.ctx.Done():
@@ -203,8 +207,27 @@ func (sm *StreamManager) StopAll() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	// Wait for processes? In a real supervisor we might waitgroup here.
-	// But context cancellation should kill the exec.CommandContext
+	var wg sync.WaitGroup
+	for _, proc := range sm.processes {
+		wg.Add(1)
+		go func(p *CameraProcess) {
+			defer wg.Done()
+			<-p.Terminated
+		}(proc)
+	}
+
+	c := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(c)
+	}()
+
+	select {
+	case <-c:
+		log.Println("All camera processes stopped successfully.")
+	case <-time.After(5 * time.Second):
+		log.Println("[WARNING] Timeout waiting for camera processes to stop.")
+	}
 }
 
 func (sm *StreamManager) StopStream(id string) {
@@ -225,13 +248,17 @@ func (sm *StreamManager) StopStream(id string) {
 	proc.State = StateStopped
 	proc.mu.Unlock()
 
-	// Wait a bit or ensure the loop exits?
-	// The cancel() call triggers ctx.Done() in runFFmpegLoop, causing it to return.
+	// Wait safely for process termination
+	select {
+	case <-proc.Terminated:
+		log.Printf("Process for camera %s cleanly terminated.", id)
+	case <-time.After(5 * time.Second):
+		log.Printf("[WARNING] Timeout waiting for camera %s process to exit.", id)
+	}
 }
 
 func (sm *StreamManager) RestartStream(id string, newConfig config.Camera) {
 	sm.StopStream(id)
-	time.Sleep(1 * time.Second) // Give it a moment to cleanup
 	sm.StartStream(id, newConfig)
 }
 

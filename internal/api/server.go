@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -23,6 +24,8 @@ type Server struct {
 	auth      *auth.Authenticator
 	templates *template.Template
 }
+
+var validIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-]+$`)
 
 func NewServer(cfg *config.Config, reg *camera.Registry, sm *ffmpeg.StreamManager, aut *auth.Authenticator) *Server {
 	return &Server{
@@ -107,6 +110,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		Expires:  time.Now().Add(24 * time.Hour),
 		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
@@ -138,6 +143,10 @@ func (s *Server) handleAdminCamera(w http.ResponseWriter, r *http.Request) {
 		}
 
 		id := strings.TrimSpace(payload.ID)
+		if id != "" && !validIDPattern.MatchString(id) {
+			http.Error(w, "Invalid Camera ID. Only alphanumeric characters, dashes, and underscores are allowed.", http.StatusBadRequest)
+			return
+		}
 		if id == "" {
 			id = generateCameraID()
 		}
@@ -170,8 +179,8 @@ func (s *Server) handleAdminCamera(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "DELETE" {
 		id := r.URL.Query().Get("id")
-		if id == "" {
-			http.Error(w, "Missing ID", http.StatusBadRequest)
+		if id == "" || !validIDPattern.MatchString(id) {
+			http.Error(w, "Invalid or missing ID", http.StatusBadRequest)
 			return
 		}
 
@@ -193,8 +202,8 @@ func (s *Server) handleAdminCameraGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.URL.Query().Get("id")
-	if id == "" {
-		http.Error(w, "Missing ID", http.StatusBadRequest)
+	if id == "" || !validIDPattern.MatchString(id) {
+		http.Error(w, "Invalid or missing ID", http.StatusBadRequest)
 		return
 	}
 	cam, ok := s.registry.Get(id)
@@ -218,6 +227,11 @@ func (s *Server) handleAdminToggle(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" || !validIDPattern.MatchString(req.ID) {
+		http.Error(w, "Invalid or missing ID", http.StatusBadRequest)
 		return
 	}
 
@@ -297,6 +311,10 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleViewer(w http.ResponseWriter, r *http.Request) {
 	id := filepath.Base(r.URL.Path)
+	if id == "" || !validIDPattern.MatchString(id) {
+		http.NotFound(w, r)
+		return
+	}
 	cam, ok := s.registry.Get(id)
 	if !ok {
 		http.NotFound(w, r)
