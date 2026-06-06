@@ -719,9 +719,13 @@
             const badge = document.querySelector(`[data-status-badge="${id}"]`);
             if (!badge) return;
             badge.textContent = state;
-            badge.className =
-              "badge " +
-              (state === "running" ? "badge-success" : "badge-danger");
+            if (state === "running") {
+              badge.className = "badge badge-success";
+            } else if (state === "idle") {
+              badge.className = "badge badge-muted";
+            } else {
+              badge.className = "badge badge-danger";
+            }
           });
           updateCounts(status);
         } catch (_) {
@@ -744,7 +748,12 @@
           }
           const state = statusMap[id];
           if (state === "running") streaming++;
-          else offline++;
+          else if (state === "idle" || state === undefined) {
+            // idle = on-demand not yet triggered, count as offline for simplicity
+            offline++;
+          } else {
+            offline++;
+          }
         });
         document.getElementById("totalCams").textContent = total;
         document.getElementById("streamingCams").textContent = streaming;

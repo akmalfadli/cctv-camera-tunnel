@@ -55,9 +55,9 @@ func main() {
 		log.Fatalf("Failed to create HLS directory: %v", err)
 	}
 
-	// 4. Start FFmpeg Supervisor
-	streamMgr.StartAll()
-	hlsMgr.Cleanup() // Start background cleanup
+	// 4. Start idle monitor (streams start on-demand per HLS request)
+	streamMgr.StartIdleMonitor()
+	hlsMgr.Cleanup() // Start background HLS cleanup
 
 	// 5. Start API & Web Server
 	server := api.NewServer(cfg, camRegistry, streamMgr, authMgr)

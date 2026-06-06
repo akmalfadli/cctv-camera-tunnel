@@ -60,9 +60,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/admin/camera/toggle", s.handleAdminToggle)
 	mux.HandleFunc("/api/admin/settings", s.handleAdminSettings)
 
-	// HLS Stream Serving
+	// HLS Stream Serving (on-demand)
 	fileServer := http.FileServer(http.Dir(s.config.HLSOutputRoot))
 	mux.Handle("/hls/", http.StripPrefix("/hls/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract camera ID (first path segment) and trigger on-demand start
+		if cameraID := hlsCameraID(r.URL.Path); cameraID != "" {
+			s.streamMgr.RequestStream(cameraID)
+		}
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Cache-Control", "no-cache")
 		fileServer.ServeHTTP(w, r)
@@ -386,4 +390,22 @@ func generateCameraID() string {
 	b := make([]byte, 8)
 	rand.Read(b)
 	return "cam_" + hex.EncodeToString(b)
+}
+
+// hlsCameraID extracts and validates the camera ID from an HLS sub-path.
+// Input examples: "cam_abc123/stream.m3u8", "cam_abc123/segment_001.ts"
+// Returns "" if the path does not contain a valid camera ID.
+func hlsCameraID(path string) string {
+	// path here is already stripped of "/hls/" prefix
+	idx := strings.IndexByte(path, '/')
+	var id string
+	if idx == -1 {
+		id = path
+	} else {
+		id = path[:idx]
+	}
+	if validIDPattern.MatchString(id) {
+		return id
+	}
+	return ""
 }
